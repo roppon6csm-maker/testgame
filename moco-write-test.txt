@@ -1,1 +1,0 @@
-Moco write test - this file verifies commit access. It will be deleted right after verification.
