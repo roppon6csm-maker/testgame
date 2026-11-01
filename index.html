@@ -427,6 +427,19 @@
   let hintLearned = localStorage.getItem("gameforge_2048_hint_learned") === "1";
   let hintVisible = false;
   let hintSession = 0; // invalidates a stale auto-hide timer
+  // juice & pacing state
+  let moveCount = 0;      // successful moves this run; the bubble line rotates every 5
+  let celebrate = null;   // { start, r, c, value } rank-up tile bounce
+  let flashes = [];       // { start, r, c } gold ring flash on every merge
+  let particles = [];     // rank-up sparkle burst
+  let burstTotal = 0;     // rank-up bursts this session (test hook)
+  let overAnim = null;    // { start } game-over gray wave
+  let overSnapshot = null; // { v, comment } result frozen at the moment of death
+  let graySprites = null; // lazily built grayscale tile sprites for the wave
+  const OVER_WAVE_MS = 55, OVER_FLIP_MS = 200, OVER_HOLD_MS = 300;
+  const OVER_TOTAL_MS = 15 * OVER_WAVE_MS + OVER_FLIP_MS + OVER_HOLD_MS;
+  // diagonal wave order (by r+c, then r): top-left first, bottom-right last
+  const WAVE = [[0, 1, 3, 6], [2, 4, 7, 10], [5, 8, 11, 13], [9, 12, 14, 15]];
 
   const cellX = (c) => BOARD_X + GAP + c * (CELL + GAP);
   const cellY = (r) => BOARD_Y + GAP + r * (CELL + GAP);
@@ -458,6 +471,54 @@
     document.getElementById("hintOverlay").classList.remove("show");
   }
 
+  // sparkle burst from a cell center, used when a tile value is born
+  // for the first time in a run
+  function spawnBurst(x, y) {
+    const colors = ["#ffd54f", "#ff7ab8", "#ffffff", "#ffe9a8"];
+    for (let i = 0; i < 12; i++) {
+      const ang = (i / 12) * Math.PI * 2 + Math.random() * 0.5;
+      const sp = 55 + Math.random() * 95;
+      particles.push({
+        x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 35,
+        start: performance.now(), life: 550 + Math.random() * 250,
+        size: 3 + Math.random() * 3.5, color: colors[i % colors.length],
+      });
+    }
+  }
+
+  function fxActive(now) {
+    return (celebrate && now - celebrate.start < 400) || flashes.length > 0 || particles.length > 0;
+  }
+
+  // Grayscale copies of the tile sprites for the game-over wave, built
+  // lazily by pixel desaturation (works for data-URL sprites, unlike
+  // ctx.filter which older Safari lacks). Falls back to a gray wash in
+  // render when unavailable (e.g. the DOM test stub).
+  function buildGraySprites() {
+    if (graySprites || typeof document.createElement !== "function") return;
+    try {
+      const built = {};
+      VALUES.forEach((v) => {
+        const img = sprites[v];
+        if (!img || !img.complete || !img.naturalWidth) return;
+        const cv = document.createElement("canvas");
+        cv.width = 128; cv.height = 128;
+        const g = cv.getContext("2d");
+        if (!g || typeof g.getImageData !== "function") return;
+        g.drawImage(img, 0, 0, 128, 128);
+        const data = g.getImageData(0, 0, 128, 128);
+        const px = data.data;
+        for (let i = 0; i < px.length; i += 4) {
+          const lum = Math.round(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]);
+          px[i] = px[i + 1] = px[i + 2] = Math.round(lum * 0.92);
+        }
+        g.putImageData(data, 0, 0);
+        built[v] = cv;
+      });
+      if (Object.keys(built).length) graySprites = built;
+    } catch (e) { /* wash fallback in render */ }
+  }
+
   // title screen: the board waits behind it until スタート is tapped.
   // The key visual is early-game art on purpose (no endgame spoiler).
   const keyImg = new Image();
@@ -475,6 +536,13 @@
     anim = null;
     bufferedDir = null;
     pulse = null;
+    moveCount = 0;
+    celebrate = null;
+    flashes = [];
+    particles = [];
+    burstTotal = 0;
+    overAnim = null;
+    overSnapshot = null;
     bestAtRunStart = best;
     for (const k of Object.keys(commentPick)) delete commentPick[k];
     board = L.emptyBoard();
@@ -504,12 +572,24 @@
       localStorage.setItem("gameforge_2048_best", String(best));
     }
     // first time this run reaches a new max tile: the header panel
-    // throbs (ドクンッ) so the eye is pulled to the new rank
+    // throbs (ドクンッ), the new tile bounces big and bursts sparkles
     const newMax = L.maxTile(board);
-    if (newMax > prevMax && newMax >= 4) pulse = { start: performance.now(), dur: pulseDurFor(newMax) };
-    // a fresh tile of the current max value was just born (rank-up or
-    // another max tile): let the idol say something new in the bubble
-    if (res.events.some((e) => e.type === "merge" && e.value === newMax)) repickComment(newMax);
+    if (newMax > prevMax && newMax >= 4) {
+      pulse = { start: performance.now(), dur: pulseDurFor(newMax) };
+      const ev = res.events.find((e) => e.type === "merge" && e.value === newMax);
+      if (ev) {
+        celebrate = { start: performance.now(), r: ev.to[0], c: ev.to[1], value: newMax };
+        spawnBurst(cellX(ev.to[1]) + CELL / 2, cellY(ev.to[0]) + CELL / 2);
+        burstTotal++;
+      }
+    }
+    // every merge gets a small gold ring flash
+    res.events.forEach((e) => {
+      if (e.type === "merge") flashes.push({ start: performance.now(), r: e.to[0], c: e.to[1] });
+    });
+    // the bubble line rotates every 5 moves so it stays lively
+    moveCount++;
+    if (moveCount % 5 === 0) repickComment(newMax);
     // the first merge ever means the swipe hint is never needed again
     if (!hintLearned && res.events.some((e) => e.type === "merge")) {
       hintLearned = true;
@@ -521,9 +601,11 @@
       state = "won";
       document.getElementById("winOverlay").classList.add("show");
     } else if (!L.canMove(board)) {
-      state = "gameover";
-      fillResultCard(newMax);
-      document.getElementById("overOverlay").classList.add("show");
+      // don't slam the result card in: freeze the result, switch to
+      // "dying" and let the full board flip gray first (tick/render),
+      // so the player can see there is nowhere left to move
+      state = "dying";
+      overSnapshot = { v: newMax, comment: commentFor(newMax) };
     }
     anim = { start: performance.now(), events: res.events, spawn: s, preBoard };
     requestAnimationFrame(tick);
@@ -532,12 +614,12 @@
 
   // the header card moves to the center of the game-over screen as a
   // screenshot-worthy result card; this fills its DOM twin
-  function fillResultCard(v) {
+  function fillResultCard(v, comment) {
     lastResult = { v, score };
     const rank = RANKS[v] || RANKS[2];
     document.getElementById("finalScore").textContent = "平均動員" + v + "名";
     document.getElementById("finalRank").textContent = rank[0];
-    document.getElementById("finalComment").textContent = commentFor(v);
+    document.getElementById("finalComment").textContent = comment || commentFor(v);
     document.getElementById("finalTotal").textContent = "総動員数 " + score + "名";
     document.getElementById("finalBest").textContent = "ベスト " + best + "名";
     const nb = document.getElementById("finalNewBest");
@@ -549,10 +631,26 @@
   }
 
   function tick(now) {
+    // game-over sequence: once the final slide settles, start the gray
+    // wave; when it has played out, bring up the result card
+    if (state === "dying" && !anim && !overAnim) {
+      buildGraySprites();
+      overAnim = { start: now };
+    }
+    if (overAnim && now - overAnim.start >= OVER_TOTAL_MS) {
+      overAnim = null;
+      state = "gameover";
+      const snap = overSnapshot;
+      overSnapshot = null;
+      if (snap) {
+        fillResultCard(snap.v, snap.comment);
+        document.getElementById("overOverlay").classList.add("show");
+      }
+    }
     render(now, anim);
     const animating = anim && now - anim.start < TOTAL_MS;
     const pulsing = pulse && now - pulse.start < pulse.dur;
-    if (animating || pulsing) { requestAnimationFrame(tick); return; }
+    if (animating || pulsing || overAnim || fxActive(now)) { requestAnimationFrame(tick); return; }
     if (pulse) pulse = null;
     if (anim) {
       anim = null;
@@ -561,7 +659,9 @@
         const d = bufferedDir;
         bufferedDir = null;
         doMove(d);
+        return;
       }
+      if (state === "dying" || fxActive(now)) requestAnimationFrame(tick);
     }
   }
 
@@ -796,8 +896,14 @@
 
     if (!a) {
       for (let r = 0; r < L.SIZE; r++)
-        for (let c = 0; c < L.SIZE; c++)
-          if (board[r][c]) drawTileAt(board[r][c], cellX(c), cellY(r), 1, board[r][c] === highlightValue);
+        for (let c = 0; c < L.SIZE; c++) {
+          if (!board[r][c]) continue;
+          if (overAnim) drawDyingTile(board[r][c], r, c, now);
+          else if (celebrate && celebrate.r === r && celebrate.c === c && now - celebrate.start < 400)
+            drawTileAt(board[r][c], cellX(c), cellY(r), celebrateScale(now), true);
+          else drawTileAt(board[r][c], cellX(c), cellY(r), 1, board[r][c] === highlightValue);
+        }
+      drawFx(now);
       return;
     }
 
@@ -822,11 +928,13 @@
         drawTileAt(v, x, y, 1, highlight);
       });
     });
-    // merged results pop in after arrival
+    // merged results pop in after arrival; the rank-up tile gets the
+    // longer bounce curve instead of the standard pop
     if (popT > 0) {
       a.events.forEach((ev) => {
         if (ev.type !== "merge") return;
-        const scale = 1.18 - 0.18 * popT;
+        const isCeleb = celebrate && celebrate.r === ev.to[0] && celebrate.c === ev.to[1];
+        const scale = isCeleb ? celebrateScale(now) : 1.18 - 0.18 * popT;
         drawTileAt(ev.value, cellX(ev.to[1]), cellY(ev.to[0]), scale, ev.value === highlightValue);
       });
       [a.spawn, a.spawn2].forEach((s) => {
@@ -835,6 +943,88 @@
         drawTileAt(s.value, cellX(s.col), cellY(s.row), scale, s.value === highlightValue);
       });
     }
+    drawFx(now);
+  }
+
+  // rank-up bounce: swells to ~1.37x and settles over 400ms
+  function celebrateScale(now) {
+    const t = Math.min(1, Math.max(0, (now - celebrate.start) / 400));
+    return 1 + 0.42 * Math.sin(Math.PI * Math.pow(t, 0.75)) * (1 - 0.3 * t);
+  }
+
+  // merge ring flashes + rank-up sparkle bursts, drawn over the board
+  function drawFx(now) {
+    flashes = flashes.filter((f) => now - f.start < 260);
+    flashes.forEach((f) => {
+      const t = (now - f.start) / 260;
+      const x = cellX(f.c) - 2 - 10 * t, y = cellY(f.r) - 2 - 10 * t;
+      const s = CELL + 4 + 20 * t;
+      ctx.save();
+      ctx.globalAlpha = 0.85 * (1 - t);
+      ctx.strokeStyle = "#ffd54f";
+      ctx.lineWidth = 3;
+      roundRect(x, y, s, s, 12);
+      ctx.stroke();
+      ctx.restore();
+    });
+    particles = particles.filter((p) => now - p.start < p.life);
+    particles.forEach((p) => {
+      const age = (now - p.start) / 1000;
+      const lt = (now - p.start) / p.life;
+      const x = p.x + p.vx * age;
+      const y = p.y + p.vy * age + 120 * age * age;
+      const s = p.size * (1 - 0.4 * lt);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - lt);
+      ctx.fillStyle = p.color;
+      ctx.translate(x, y);
+      ctx.beginPath();
+      ctx.moveTo(0, -s); ctx.lineTo(s * 0.32, -s * 0.32); ctx.lineTo(s, 0); ctx.lineTo(s * 0.32, s * 0.32);
+      ctx.lineTo(0, s); ctx.lineTo(-s * 0.32, s * 0.32); ctx.lineTo(-s, 0); ctx.lineTo(-s * 0.32, -s * 0.32);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    });
+    if (celebrate && now - celebrate.start >= 400) celebrate = null;
+  }
+
+  // one tile of the game-over wave: flips around its vertical axis,
+  // colored side first, gray side second, in a diagonal cascade
+  function drawDyingTile(v, r, c, now) {
+    const x = cellX(c), y = cellY(r);
+    const p = Math.min(1, Math.max(0, (now - overAnim.start - WAVE[r][c] * OVER_WAVE_MS) / OVER_FLIP_MS));
+    if (p <= 0) { drawTileAt(v, x, y, 1, false); return; }
+    const gray = graySprites && graySprites[v];
+    const img = (p >= 0.5 && gray) ? gray : sprites[v];
+    ctx.save();
+    ctx.translate(x + CELL / 2, y + CELL / 2);
+    ctx.scale(Math.max(0.02, Math.abs(Math.cos(p * Math.PI))), 1);
+    if (img && (img.naturalWidth || img.width)) {
+      ctx.save();
+      roundRect(-CELL / 2, -CELL / 2, CELL, CELL, 10);
+      ctx.clip();
+      ctx.drawImage(img, -CELL / 2, -CELL / 2, CELL, CELL);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = TILE_COLORS[v] || "#666";
+      roundRect(-CELL / 2, -CELL / 2, CELL, CELL, 10);
+      ctx.fill();
+    }
+    if (!gray && p > 0.5) {
+      ctx.fillStyle = "rgba(128,128,140," + (0.62 * (p - 0.5) * 2).toFixed(3) + ")";
+      roundRect(-CELL / 2, -CELL / 2, CELL, CELL, 10);
+      ctx.fill();
+    }
+    ctx.restore();
+    // the number badge stays put while the tile flips under it
+    const label = String(v);
+    ctx.font = "700 " + (label.length > 3 ? 13 : 15) + "px system-ui, sans-serif";
+    const tw = ctx.measureText(label).width + 12;
+    ctx.fillStyle = "rgba(10,8,16,.78)";
+    roundRect(x + CELL - tw - 4, y + CELL - 22, tw, 18, 9);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.fillText(label, x + CELL - tw + 2, y + CELL - 8);
   }
 
   const KEYMAP = {
@@ -984,6 +1174,8 @@
     get headerComment() { return commentFor(Math.max(2, L.maxTile(board))); },
     get hintVisible() { return hintVisible; },
     get hintLearned() { return hintLearned; },
+    get moveCount() { return moveCount; },
+    get burstTotal() { return burstTotal; },
     get pulseActive() { return !!pulse; },
     get pulseDur() { return pulse ? pulse.dur : 0; },
     get stageTier() { return stageTierOf(Math.max(2, L.maxTile(board))); },
@@ -1002,6 +1194,11 @@
       anim = null;
       bufferedDir = null;
       pulse = null;
+      celebrate = null;
+      flashes = [];
+      particles = [];
+      overAnim = null;
+      overSnapshot = null;
       board = b.map((row) => row.slice());
       if (typeof s === "number") score = s;
       state = "playing";
