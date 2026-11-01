@@ -326,20 +326,38 @@
     ctx.roundRect(x, y, w, h, r);
   }
 
-  function drawTileAt(v, px, py, scale) {
+  function drawTileAt(v, px, py, scale, highlight) {
     const pad = (CELL * (1 - scale)) / 2;
+    const x = px + pad;
+    const y = py + pad;
+    const s = CELL - pad * 2;
     const img = sprites[v];
     if (img && img.complete && img.naturalWidth) {
       // scene tiles are full-bleed photos: clip to the cell's rounded shape
       ctx.save();
-      roundRect(px + pad, py + pad, CELL - pad * 2, CELL - pad * 2, 10);
+      roundRect(x, y, s, s, 10);
       ctx.clip();
-      ctx.drawImage(img, px + pad, py + pad, CELL - pad * 2, CELL - pad * 2);
+      ctx.drawImage(img, x, y, s, s);
       ctx.restore();
     } else {
       ctx.fillStyle = TILE_COLORS[v] || "#666";
-      roundRect(px + pad, py + pad, CELL - pad * 2, CELL - pad * 2, 10);
+      roundRect(x, y, s, s, 10);
       ctx.fill();
+    }
+    if (highlight) {
+      ctx.save();
+      ctx.shadowColor = "rgba(255, 213, 79, .95)";
+      ctx.shadowBlur = 16;
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#ffd54f";
+      roundRect(x + 2, y + 2, s - 4, s - 4, 9);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "rgba(255, 255, 255, .92)";
+      roundRect(x + 5, y + 5, s - 10, s - 10, 7);
+      ctx.stroke();
+      ctx.restore();
     }
     const label = String(v);
     ctx.font = "700 " + (label.length > 3 ? 13 : 15) + "px system-ui, sans-serif";
@@ -409,10 +427,13 @@
         ctx.fill();
       }
 
+    const maxV = L.maxTile(board);
+    const highlightValue = maxV >= 4 ? maxV : 0;
+
     if (!a) {
       for (let r = 0; r < L.SIZE; r++)
         for (let c = 0; c < L.SIZE; c++)
-          if (board[r][c]) drawTileAt(board[r][c], cellX(c), cellY(r), 1);
+          if (board[r][c]) drawTileAt(board[r][c], cellX(c), cellY(r), 1, board[r][c] === highlightValue);
       return;
     }
 
@@ -423,17 +444,18 @@
 
     // settled tiles first
     a.events.forEach((ev) => {
-      if (ev.type === "stay") drawTileAt(ev.value, cellX(ev.to[1]), cellY(ev.to[0]), 1);
+      if (ev.type === "stay") drawTileAt(ev.value, cellX(ev.to[1]), cellY(ev.to[0]), 1, ev.value === highlightValue);
       if (ev.type === "merge") mergedCells.add(ev.to[0] + "," + ev.to[1]);
     });
     // sliding tiles (sources carry their pre-move value)
     a.events.forEach((ev) => {
       if (ev.type === "stay") return;
+      const highlight = ev.type === "slide" && ev.value === highlightValue;
       ev.sources.forEach(([sr, sc]) => {
         const v = a.preBoard[sr][sc];
         const x = cellX(sc) + (cellX(ev.to[1]) - cellX(sc)) * e;
         const y = cellY(sr) + (cellY(ev.to[0]) - cellY(sr)) * e;
-        drawTileAt(v, x, y, 1);
+        drawTileAt(v, x, y, 1, highlight);
       });
     });
     // merged results pop in after arrival
@@ -441,12 +463,12 @@
       a.events.forEach((ev) => {
         if (ev.type !== "merge") return;
         const scale = 1.18 - 0.18 * popT;
-        drawTileAt(ev.value, cellX(ev.to[1]), cellY(ev.to[0]), scale);
+        drawTileAt(ev.value, cellX(ev.to[1]), cellY(ev.to[0]), scale, ev.value === highlightValue);
       });
       [a.spawn, a.spawn2].forEach((s) => {
         if (!s) return;
         const scale = 0.6 + 0.4 * popT;
-        drawTileAt(s.value, cellX(s.col), cellY(s.row), scale);
+        drawTileAt(s.value, cellX(s.col), cellY(s.row), scale, s.value === highlightValue);
       });
     }
   }
@@ -486,6 +508,15 @@
     get score() { return score; },
     get state() { return state; },
     get rankValue() { return Math.max(2, L.maxTile(board)); },
+    get highlightValue() { const m = L.maxTile(board); return m >= 4 ? m : 0; },
+    highlightCells() {
+      const m = L.maxTile(board);
+      if (m < 4) return [];
+      const cells = [];
+      for (let r = 0; r < L.SIZE; r++)
+        for (let c = 0; c < L.SIZE; c++) if (board[r][c] === m) cells.push([r, c]);
+      return cells;
+    },
     move: doMove,
     restart,
     setBoard(b, s) {
