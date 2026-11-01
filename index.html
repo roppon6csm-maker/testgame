@@ -410,51 +410,87 @@
       ctx.fillRect(0, 0, W, H);
     }
 
-    ctx.fillStyle = "rgba(12,9,20,.50)";
-    ctx.fillRect(0, 0, W, 150);
+    // Header v3 rules (learned the hard way):
+    //  - Text NEVER sits on a pattern. Title and meta live on a solid
+    //    band; rank info lives on a calm white card.
+    //  - The headline stat is ONE unbroken string (平均動員64名) drawn
+    //    in a single call, so it reads as one chunk at a glance.
+    ctx.fillStyle = "#3a1450";
+    ctx.fillRect(0, 0, W, 40);
     ctx.fillStyle = "#fff";
-    ctx.font = "700 21px system-ui, sans-serif";
-    ctx.fillText("箱アイドル2048", 18, 30);
-    ctx.textAlign = "right";
-    ctx.font = "700 15px system-ui, sans-serif";
-    ctx.fillText("総動員数 " + score, 372, 26);
-    ctx.font = "500 11px system-ui, sans-serif";
-    ctx.fillStyle = "#cfc6e8";
-    ctx.fillText("ベスト " + best, 372, 44);
-    ctx.textAlign = "left";
-    // rank portrait sits right next to the rank text: one glance, all info
-    ctx.fillStyle = "rgba(30,16,44,.85)";
-    roundRect(18, 44, 92, 92, 10);
+    ctx.font = "700 16px system-ui, sans-serif";
+    ctx.fillText("箱アイドル2048", 14, 26);
+    ctx.font = "700 11px system-ui, sans-serif";
+    const chip = (text, rightX) => {
+      const w = ctx.measureText(text).width + 18;
+      ctx.fillStyle = "rgba(255,255,255,.16)";
+      roundRect(rightX - w, 9, w, 22, 11);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.fillText(text, rightX - w + 9, 24);
+      return rightX - w;
+    };
+    const afterBest = chip("ベスト " + best, 376);
+    chip("総動員数 " + score, afterBest - 6);
+    // pop gradient field: decoration only, carries no text
+    const hg = typeof ctx.createLinearGradient === "function" ? ctx.createLinearGradient(0, 40, W, 150) : null;
+    if (hg && typeof hg.addColorStop === "function") {
+      hg.addColorStop(0, "#ff7ab8");
+      hg.addColorStop(1, "#8368ff");
+      ctx.fillStyle = hg;
+    } else {
+      ctx.fillStyle = "#ff7ab8";
+    }
+    ctx.fillRect(0, 40, W, 110);
+    // rank card: one calm surface for portrait + all rank text
+    ctx.save();
+    ctx.shadowColor = "rgba(60,0,40,.25)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 3;
+    ctx.fillStyle = "#fff7fb";
+    roundRect(14, 50, 362, 88, 14);
     ctx.fill();
+    ctx.restore();
     const pimg = portraits[rankV];
     const rankImg = (pimg && pimg.complete && pimg.naturalWidth) ? pimg
       : (sprites[rankV] && sprites[rankV].complete && sprites[rankV].naturalWidth) ? sprites[rankV] : null;
     if (rankImg) {
       ctx.save();
-      roundRect(22, 48, 84, 84, 8);
+      roundRect(26, 60, 64, 64, 10);
       ctx.clip();
-      ctx.drawImage(rankImg, 22, 48, 84, 84);
+      ctx.drawImage(rankImg, 26, 60, 64, 64);
       ctx.restore();
     }
-    ctx.strokeStyle = "rgba(255,158,203,.5)";
-    roundRect(18, 44, 92, 92, 10);
+    ctx.strokeStyle = "#ffd3e8";
+    roundRect(26, 60, 64, 64, 10);
     ctx.stroke();
-    ctx.font = "700 23px system-ui, sans-serif";
-    ctx.fillStyle = "#ffd54f";
-    ctx.fillText("平均動員 " + rankV, 122, 72);
-    ctx.font = "700 16px system-ui, sans-serif";
-    ctx.fillStyle = "#ff9ecb";
-    ctx.fillText(rank[0], 122, 95);
-    ctx.font = "500 12.5px system-ui, sans-serif";
-    ctx.fillStyle = "#e8dff5";
-    ctx.fillText(rank[1], 122, 114);
+    ctx.font = "700 24px system-ui, sans-serif";
+    ctx.fillStyle = "#e6007e";
+    ctx.fillText("平均動員" + rankV + "名", 104, 84);
+    ctx.font = "700 15px system-ui, sans-serif";
+    ctx.fillStyle = "#33163f";
+    ctx.fillText(rank[0], 104, 106);
+    ctx.font = "500 12px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(51,22,63,.75)";
+    ctx.fillText(rank[1], 104, 124);
     const nextV = VALUES.find((v) => v > rankV);
-    ctx.font = "500 11.5px system-ui, sans-serif";
-    ctx.fillStyle = "#9d92b8";
-    ctx.fillText(nextV ? "次のランク: 平均動員" + nextV + " " + RANKS[nextV][0] : "最高ランク到達！", 122, 132);
     ctx.font = "500 10px system-ui, sans-serif";
-    ctx.fillStyle = "#776d94";
-    ctx.fillText("矢印キー / WASD / スワイプ", 18, 148);
+    ctx.fillStyle = "#b0527f";
+    ctx.textAlign = "right";
+    ctx.fillText(nextV ? "次のランク 平均動員" + nextV + "名" : "最高ランク到達！", 364, 124);
+    ctx.textAlign = "left";
+    // sparkles only in the empty strip under the card (no text there)
+    ctx.fillStyle = "rgba(255,255,255,.55)";
+    [30, 120, 260, 350].forEach((sx) => {
+      ctx.save();
+      ctx.translate(sx, 146);
+      ctx.beginPath();
+      ctx.moveTo(0, -5); ctx.lineTo(1.6, -1.6); ctx.lineTo(5, 0); ctx.lineTo(1.6, 1.6);
+      ctx.lineTo(0, 5); ctx.lineTo(-1.6, 1.6); ctx.lineTo(-5, 0); ctx.lineTo(-1.6, -1.6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    });
 
     ctx.fillStyle = "rgba(20,15,30,.72)";
     roundRect(BOARD_X - 5, BOARD_Y - 5, BOARD + 10, BOARD + 10, 14);
