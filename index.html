@@ -214,6 +214,15 @@
     1024: ["ホール級", "地下の夢の到達点"],
     2048: ["伝説", "伝説のワンマン達成"],
   };
+  // Venue mood bands: the room brightens as the crowd (rank) grows.
+  function stageTierOf(v) {
+    if (v <= 8) return 0;
+    if (v <= 32) return 1;
+    if (v <= 128) return 2;
+    if (v <= 512) return 3;
+    if (v <= 1024) return 4;
+    return 5;
+  }
   const SLIDE_MS = 115;   // tile travel time
   const POP_MS = 110;     // merge/spawn pop time after arrival
   const TOTAL_MS = SLIDE_MS + POP_MS;
@@ -297,7 +306,7 @@
       document.getElementById("winOverlay").classList.add("show");
     } else if (!L.canMove(board)) {
       state = "gameover";
-      document.getElementById("finalScore").textContent = "総動員数: " + score;
+      document.getElementById("finalScore").textContent = "平均動員: " + L.maxTile(board);
       document.getElementById("overOverlay").classList.add("show");
     }
     anim = { start: performance.now(), events: res.events, spawn: s, preBoard };
@@ -370,52 +379,82 @@
   }
 
   function render(now, a) {
+    const rankV = Math.max(2, L.maxTile(board));
+    const rank = RANKS[rankV] || RANKS[2];
     ctx.clearRect(0, 0, W, H);
     if (bg.complete && bg.naturalWidth) ctx.drawImage(bg, 0, 0, W, H);
     else { ctx.fillStyle = "#241d33"; ctx.fillRect(0, 0, W, H); }
 
-    ctx.fillStyle = "rgba(12,9,20,.55)";
+    // venue mood wash over the background: brighter as the rank grows
+    const tier = stageTierOf(rankV);
+    if (tier === 1) {
+      ctx.fillStyle = "rgba(255,150,60,.10)"; ctx.fillRect(0, 0, W, H);
+    } else if (tier === 2) {
+      ctx.fillStyle = "rgba(255,80,140,.12)"; ctx.fillRect(0, 0, W, H);
+    } else if (tier === 3) {
+      ctx.fillStyle = "rgba(255,190,70,.14)"; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "rgba(255,255,255,.04)"; ctx.fillRect(0, 0, W, H);
+    } else if (tier === 4) {
+      ctx.fillStyle = "rgba(255,220,120,.18)"; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "rgba(255,255,255,.06)"; ctx.fillRect(0, 0, W, H);
+    } else if (tier === 5) {
+      const grad = typeof ctx.createLinearGradient === "function" ? ctx.createLinearGradient(0, 0, W, H) : null;
+      if (grad && typeof grad.addColorStop === "function") {
+        grad.addColorStop(0, "rgba(255,80,120,.16)");
+        grad.addColorStop(0.5, "rgba(255,210,80,.16)");
+        grad.addColorStop(1, "rgba(90,160,255,.16)");
+        ctx.fillStyle = grad;
+      } else {
+        ctx.fillStyle = "rgba(255,140,190,.15)";
+      }
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    ctx.fillStyle = "rgba(12,9,20,.50)";
     ctx.fillRect(0, 0, W, 150);
-    const rankV = Math.max(2, L.maxTile(board));
-    const rank = RANKS[rankV] || RANKS[2];
     ctx.fillStyle = "#fff";
-    ctx.font = "700 26px system-ui, sans-serif";
-    ctx.fillText("箱アイドル2048", 18, 37);
-    ctx.font = "500 12px system-ui, sans-serif";
-    ctx.fillStyle = "#ffd9ec";
-    ctx.fillText("合体させて動員を増やそう", 18, 59);
-    ctx.font = "700 18px system-ui, sans-serif";
-    ctx.fillStyle = "#fff";
-    ctx.fillText("総動員数 " + score, 18, 87);
-    ctx.font = "500 13px system-ui, sans-serif";
+    ctx.font = "700 21px system-ui, sans-serif";
+    ctx.fillText("箱アイドル2048", 18, 30);
+    ctx.textAlign = "right";
+    ctx.font = "700 15px system-ui, sans-serif";
+    ctx.fillText("総動員数 " + score, 372, 26);
+    ctx.font = "500 11px system-ui, sans-serif";
     ctx.fillStyle = "#cfc6e8";
-    ctx.fillText("ベスト " + best, 196, 87);
+    ctx.fillText("ベスト " + best, 372, 44);
+    ctx.textAlign = "left";
+    // rank portrait sits right next to the rank text: one glance, all info
+    ctx.fillStyle = "rgba(30,16,44,.85)";
+    roundRect(18, 44, 92, 92, 10);
+    ctx.fill();
+    const pimg = portraits[rankV];
+    const rankImg = (pimg && pimg.complete && pimg.naturalWidth) ? pimg
+      : (sprites[rankV] && sprites[rankV].complete && sprites[rankV].naturalWidth) ? sprites[rankV] : null;
+    if (rankImg) {
+      ctx.save();
+      roundRect(22, 48, 84, 84, 8);
+      ctx.clip();
+      ctx.drawImage(rankImg, 22, 48, 84, 84);
+      ctx.restore();
+    }
+    ctx.strokeStyle = "rgba(255,158,203,.5)";
+    roundRect(18, 44, 92, 92, 10);
+    ctx.stroke();
+    ctx.font = "700 23px system-ui, sans-serif";
+    ctx.fillStyle = "#ffd54f";
+    ctx.fillText("平均動員 " + rankV, 122, 72);
     ctx.font = "700 16px system-ui, sans-serif";
     ctx.fillStyle = "#ff9ecb";
-    ctx.fillText(rank[0], 18, 113);
+    ctx.fillText(rank[0], 122, 95);
     ctx.font = "500 12.5px system-ui, sans-serif";
     ctx.fillStyle = "#e8dff5";
-    ctx.fillText(rank[1], 18, 133);
-    ctx.font = "500 11px system-ui, sans-serif";
+    ctx.fillText(rank[1], 122, 114);
+    const nextV = VALUES.find((v) => v > rankV);
+    ctx.font = "500 11.5px system-ui, sans-serif";
     ctx.fillStyle = "#9d92b8";
+    ctx.fillText(nextV ? "次のランク: 平均動員" + nextV + " " + RANKS[nextV][0] : "最高ランク到達！", 122, 132);
+    ctx.font = "500 10px system-ui, sans-serif";
+    ctx.fillStyle = "#776d94";
     ctx.fillText("矢印キー / WASD / スワイプ", 18, 148);
-    // rank portrait (idol only) in a stage-like frame
-    ctx.fillStyle = "rgba(30,16,44,.85)";
-    roundRect(296, 8, 86, 134, 10);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,158,203,.5)";
-    ctx.stroke();
-    const pimg = portraits[rankV];
-    if (pimg && pimg.complete && pimg.naturalWidth) {
-      ctx.drawImage(pimg, 301, 34, 76, 76);
-    } else if (sprites[rankV] && sprites[rankV].complete && sprites[rankV].naturalWidth) {
-      ctx.drawImage(sprites[rankV], 301, 34, 76, 76);
-    }
-    ctx.font = "700 12px system-ui, sans-serif";
-    ctx.fillStyle = "#ffd9ec";
-    ctx.textAlign = "center";
-    ctx.fillText("動員 " + rankV, 339, 126);
-    ctx.textAlign = "left";
 
     ctx.fillStyle = "rgba(20,15,30,.72)";
     roundRect(BOARD_X - 5, BOARD_Y - 5, BOARD + 10, BOARD + 10, 14);
@@ -508,6 +547,7 @@
     get score() { return score; },
     get state() { return state; },
     get rankValue() { return Math.max(2, L.maxTile(board)); },
+    get stageTier() { return stageTierOf(Math.max(2, L.maxTile(board))); },
     get highlightValue() { const m = L.maxTile(board); return m >= 4 ? m : 0; },
     highlightCells() {
       const m = L.maxTile(board);
