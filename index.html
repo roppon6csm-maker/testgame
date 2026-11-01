@@ -37,8 +37,8 @@
      nudges the flex center to the board's middle), never blocks input */
   #hintOverlay {
     position:absolute; inset:0; z-index:4; pointer-events:none;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    padding-top:56px; box-sizing:border-box;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    padding-top:197px; box-sizing:border-box;
     opacity:0; transition:opacity .2s ease;
   }
   #hintOverlay.show { opacity:1; transition:opacity .25s ease .25s; }
@@ -332,7 +332,7 @@
 (function () {
   const L = window.GF2048;
   const W = 390, H = 640;
-  const BOARD_X = 15, BOARD_Y = 168, BOARD = 360, GAP = 10;
+  const BOARD_X = 15, BOARD_Y = 58, BOARD = 360, GAP = 10;
   const CELL = (BOARD - GAP * (L.SIZE + 1)) / L.SIZE;
   const VALUES = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
   const TILE_COLORS = {
@@ -787,7 +787,7 @@
     const afterBest = chip("ベスト " + best, 376);
     chip("総動員数 " + score, afterBest - 6);
     // pop gradient field: decoration only, carries no text
-    const hg = typeof ctx.createLinearGradient === "function" ? ctx.createLinearGradient(0, 40, W, 150) : null;
+    const hg = typeof ctx.createLinearGradient === "function" ? ctx.createLinearGradient(0, 528, W, 640) : null;
     if (hg && typeof hg.addColorStop === "function") {
       hg.addColorStop(0, "#ff7ab8");
       hg.addColorStop(1, "#8368ff");
@@ -795,29 +795,29 @@
     } else {
       ctx.fillStyle = "#ff7ab8";
     }
-    ctx.fillRect(0, 40, W, 110);
+    ctx.fillRect(0, 528, W, 112);
     // rank card: one calm surface for portrait + all rank text.
     // On a rank-up pulse the whole card throbs around its center.
     const pulseT = pulse ? Math.min(1, Math.max(0, ((now - pulse.start) / pulse.dur) || 0)) : 0;
     const pScale = pulse ? pulseScale(pulseT) : 1;
     ctx.save();
     if (pScale !== 1) {
-      ctx.translate(195, 94);
+      ctx.translate(195, 582);
       ctx.scale(pScale, pScale);
-      ctx.translate(-195, -94);
+      ctx.translate(-195, -582);
     }
     ctx.save();
     ctx.shadowColor = "rgba(60,0,40,.25)";
     ctx.shadowBlur = 10;
     ctx.shadowOffsetY = 3;
     ctx.fillStyle = "#fff7fb";
-    roundRect(14, 50, 362, 88, 14);
+    roundRect(14, 538, 362, 88, 14);
     ctx.fill();
     ctx.restore();
     if (pulse) {
       ctx.strokeStyle = "rgba(255,197,66," + (0.9 * (1 - pulseT)).toFixed(3) + ")";
       ctx.lineWidth = 3;
-      roundRect(14, 50, 362, 88, 14);
+      roundRect(14, 538, 362, 88, 14);
       ctx.stroke();
       ctx.lineWidth = 1;
     }
@@ -826,26 +826,26 @@
       : (sprites[rankV] && sprites[rankV].complete && sprites[rankV].naturalWidth) ? sprites[rankV] : null;
     if (rankImg) {
       ctx.save();
-      roundRect(26, 60, 64, 64, 10);
+      roundRect(26, 548, 64, 64, 10);
       ctx.clip();
-      ctx.drawImage(rankImg, 26, 60, 64, 64);
+      ctx.drawImage(rankImg, 26, 548, 64, 64);
       ctx.restore();
     }
     ctx.strokeStyle = "#ffd3e8";
-    roundRect(26, 60, 64, 64, 10);
+    roundRect(26, 548, 64, 64, 10);
     ctx.stroke();
     ctx.font = "800 24px 'MPLUS Rounded 1c', system-ui, sans-serif";
     ctx.fillStyle = "#e6007e";
-    ctx.fillText("平均動員" + rankV + "名", 104, 90);
+    ctx.fillText("平均動員" + rankV + "名", 104, 578);
     ctx.font = "700 15px system-ui, sans-serif";
     ctx.fillStyle = "#33163f";
-    ctx.fillText(rank[0], 104, 116);
+    ctx.fillText(rank[0], 104, 604);
     ctx.restore();
     // sparkles only in the empty strip under the card (no text there)
     ctx.fillStyle = "rgba(255,255,255,.55)";
     [30, 120, 260, 350].forEach((sx) => {
       ctx.save();
-      ctx.translate(sx, 146);
+      ctx.translate(sx, 634);
       ctx.beginPath();
       ctx.moveTo(0, -5); ctx.lineTo(1.6, -1.6); ctx.lineTo(5, 0); ctx.lineTo(1.6, 1.6);
       ctx.lineTo(0, 5); ctx.lineTo(-1.6, 1.6); ctx.lineTo(-5, 0); ctx.lineTo(-1.6, -1.6);
@@ -968,7 +968,7 @@
   // colored, she floats just above the line at her current station,
   // and the rank comment is now HER speech bubble (it used to sit in
   // the header until cycle 14). Venue group names go under the numbers.
-  const RM_LINE_Y = 608, RM_X0 = 33, RM_X1 = 357;
+  const RM_LINE_Y = 494, RM_X0 = 33, RM_X1 = 357;
   const RM_GROUPS = [["小箱", 0, 3, 0], ["中箱", 4, 5, 0], ["大箱", 6, 7, 0],
                      ["ワンマン", 8, 8, -5], ["ホール", 9, 9, 4], ["伝説", 10, 10, 0]];
   const stationX = (i) => RM_X0 + ((RM_X1 - RM_X0) * i) / 10;
@@ -1037,11 +1037,11 @@
     ctx.textBaseline = "middle";
     ctx.font = "700 9px system-ui, sans-serif";
     ctx.fillStyle = "rgba(255,255,255,.85)";
-    VALUES.forEach((v, i) => ctx.fillText(String(v), stationX(i), 620));
+    VALUES.forEach((v, i) => ctx.fillText(String(v), stationX(i), 506));
     ctx.font = "600 9px system-ui, sans-serif";
     ctx.fillStyle = "rgba(255,255,255,.68)";
     RM_GROUPS.forEach(([name, a, b, off]) => {
-      ctx.fillText(name, (stationX(a) + stationX(b)) / 2 + off, 633);
+      ctx.fillText(name, (stationX(a) + stationX(b)) / 2 + off, 519);
     });
     ctx.restore();
     // her speech bubble, above her head; extends right on the left
@@ -1053,7 +1053,7 @@
       fs -= 0.5;
       ctx.font = "600 " + fs + "px system-ui, sans-serif";
     }
-    const bw = ctx.measureText(comment).width + 22, bh = 22, by = 536;
+    const bw = ctx.measureText(comment).width + 22, bh = 22, by = 422;
     const headX = curX + 5;
     let bx, tailA, tailB;
     if (idx <= 5) { bx = headX + 8; tailA = bx + 2; tailB = bx + 11; }
@@ -1091,13 +1091,14 @@
     ctx.font = "700 10px system-ui, sans-serif";
     const chipW = ctx.measureText("動員数").width + 14;
     ctx.fillStyle = "#e7549c";
-    roundRect(8, 544, chipW, 20, 10);
+    roundRect(8, 430, chipW, 20, 10);
     ctx.fill();
     ctx.fillStyle = "#fff";
-    ctx.fillText("動員数", 15, 558);
+    ctx.fillText("動員数", 15, 444);
     // the runner herself: floats a few px above the line, mid-stride
-    // in a 4-frame run cycle (bob + lean + dust puffs at her back foot)
-    const RUN_BOB = [0, -3, -1, -3], RUN_ROT = [-2.5, 0, 2, 0], RUN_PUFF = [0.5, 1, 0.5, 1];
+    // in a 4-frame run cycle (bob + dust puffs at her back foot; no
+    // tilt — rotating the tiny sprite mangles her eye on some frames)
+    const RUN_BOB = [0, -3, -1, -3], RUN_PUFF = [0.5, 1, 0.5, 1];
     let yOff = RUN_BOB[runPhase];
     if (runnerJump) {
       const jt = (now - runnerJump.start) / 380;
@@ -1116,11 +1117,10 @@
       });
       ctx.restore();
       // sprite is 67x64, drawn 32 tall; her feet anchor is 21.25px
-      // from the left edge at this scale, and the lean pivots there
+      // from the left edge at this scale
       ctx.save();
       ctx.imageSmoothingEnabled = false;
       ctx.translate(curX, RM_LINE_Y - 4 + yOff);
-      ctx.rotate(RUN_ROT[runPhase] * Math.PI / 180);
       ctx.drawImage(runnerImg, -21.25, -32, 33.5, 32);
       ctx.restore();
     } else {
@@ -1140,7 +1140,7 @@
         runPhase = (runPhase + 1) % 4;
         render(performance.now(), null);
       }
-    }, 150);
+    }, 200);
     if (iv && typeof iv.unref === "function") iv.unref();
   }
 
