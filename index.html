@@ -309,19 +309,33 @@
     512: "#f7a8ff", 1024: "#fff3b0", 2048: "#ffe45e",
   };
   // Rank shown in the header, keyed by the current max tile (= crowd size).
+  // Each rank carries several speech-bubble comments; the header picks
+  // one and re-picks whenever a tile of the current max value is born.
   const RANKS = {
-    2: ["駆け出し", "小さな箱で悪戦苦闘中"],
-    4: ["小箱の常連", "イツメン募集中"],
-    8: ["常連がついた", "サイリウムが少し増えた"],
-    16: ["小箱の星", "小箱では動員トップアイドル"],
-    32: ["中箱デビュー", "ワンマンも始めたが招待客多め"],
-    64: ["中箱の人気者", "かなりチヤホヤされてる"],
-    128: ["大箱進出", "フロアが埋まってきた"],
-    256: ["大箱満員", "熱気がすごい"],
-    512: ["真のワンマン", "真のワンマンライブが打てる"],
-    1024: ["ホール級", "地下の夢の到達点"],
-    2048: ["伝説", "伝説のワンマン達成"],
+    2: ["駆け出し", ["小さな箱で悪戦苦闘中", "今日も来てくれてありがとう！", "まずは顔と名前、覚えてほしいな"]],
+    4: ["小箱の常連", ["イツメン募集中", "いつもの顔ぶれ、ほっとする〜", "物販にも顔出してほしいな"]],
+    8: ["常連がついた", ["サイリウムが少し増えた", "あ、私の色が増えてる…！", "名前を呼んでもらえた、うれしい"]],
+    16: ["小箱の星", ["小箱では動員トップアイドル", "この箱じゃ、わたしが一番！", "フロアの視線、全部もらっちゃう"]],
+    32: ["中箱デビュー", ["ワンマンも始めたが招待客多め", "招待じゃないお客さん、増やしたい！", "中箱、思ったより広い…！", "チェキ列が伸びてきてる…？"]],
+    64: ["中箱の人気者", ["かなりチヤホヤされてる！", "ガチ恋多めで困っちゃう 汗", "チェキ列がめっちゃ長い！"]],
+    128: ["大箱進出", ["フロアが埋まってきた", "後ろの人まで手、振って〜！", "大箱のステージ、気持ちいい！"]],
+    256: ["大箱満員", ["熱気がすごい", "酸素うすい！でも最高！", "コールが壁みたいに押し寄せる！"]],
+    512: ["真のワンマン", ["真のワンマンライブが打てる", "全員、私に会いに来たんだ…", "この景色、ずっと夢見てた"]],
+    1024: ["ホール級", ["地下の夢の到達点", "ホールだよ、ホール！すごくない？", "ここまで来られたの、みんなのおかげ"]],
+    2048: ["伝説", ["伝説のワンマン達成", "ねえ、これ夢じゃないよね？", "伝説、はじまったよ…！"]],
   };
+  const commentPick = {};
+  function commentFor(v) {
+    const list = (RANKS[v] || RANKS[2])[1];
+    if (!(v in commentPick)) commentPick[v] = Math.floor(Math.random() * list.length);
+    return list[commentPick[v]];
+  }
+  function repickComment(v) {
+    const list = (RANKS[v] || RANKS[2])[1];
+    let n = Math.floor(Math.random() * list.length);
+    if (list.length > 1 && n === commentPick[v]) n = (n + 1) % list.length;
+    commentPick[v] = n;
+  }
   // Venue mood bands: the room brightens as the crowd (rank) grows.
   function stageTierOf(v) {
     if (v <= 8) return 0;
@@ -406,6 +420,7 @@
     bufferedDir = null;
     pulse = null;
     bestAtRunStart = best;
+    for (const k of Object.keys(commentPick)) delete commentPick[k];
     board = L.emptyBoard();
     score = 0;
     state = "playing";
@@ -435,6 +450,9 @@
     // throbs (ドクンッ) so the eye is pulled to the new rank
     const newMax = L.maxTile(board);
     if (newMax > prevMax && newMax >= 4) pulse = { start: performance.now(), dur: pulseDurFor(newMax) };
+    // a fresh tile of the current max value was just born (rank-up or
+    // another max tile): let the idol say something new in the bubble
+    if (res.events.some((e) => e.type === "merge" && e.value === newMax)) repickComment(newMax);
     const s = L.spawnRandom(board, rng);
     if (!wonShown && L.maxTile(board) >= 2048) {
       wonShown = true;
@@ -457,7 +475,7 @@
     const rank = RANKS[v] || RANKS[2];
     document.getElementById("finalScore").textContent = "平均動員" + v + "名";
     document.getElementById("finalRank").textContent = rank[0];
-    document.getElementById("finalComment").textContent = rank[1];
+    document.getElementById("finalComment").textContent = commentFor(v);
     document.getElementById("finalTotal").textContent = "総動員数 " + score + "名";
     document.getElementById("finalBest").textContent = "ベスト " + best + "名";
     const nb = document.getElementById("finalNewBest");
@@ -650,16 +668,43 @@
     ctx.fillText("平均動員" + rankV + "名", 104, 84);
     ctx.font = "700 15px system-ui, sans-serif";
     ctx.fillStyle = "#33163f";
-    ctx.fillText(rank[0], 104, 106);
-    ctx.font = "500 12px system-ui, sans-serif";
-    ctx.fillStyle = "rgba(51,22,63,.75)";
-    ctx.fillText(rank[1], 104, 124);
-    const nextV = VALUES.find((v) => v > rankV);
-    ctx.font = "500 10px system-ui, sans-serif";
-    ctx.fillStyle = "#b0527f";
-    ctx.textAlign = "right";
-    ctx.fillText(nextV ? "次のランク 平均動員" + nextV + "名" : "最高ランク到達！", 364, 124);
-    ctx.textAlign = "left";
+    ctx.fillText(rank[0], 104, 104);
+    // the comment is a speech bubble spoken by the portrait idol:
+    // white bubble with a pink outline and a tail pointing left.
+    const comment = commentFor(rankV);
+    const bx = 116, by = 109, bw = 248, bh = 25;
+    ctx.fillStyle = "#fff";
+    roundRect(bx, by, bw, bh, 9);
+    ctx.fill();
+    ctx.strokeStyle = "#ff9ec7";
+    ctx.lineWidth = 1.5;
+    roundRect(bx, by, bw, bh, 9);
+    ctx.stroke();
+    // tail (fill covers the bubble border where the tail joins, then
+    // only the two outer edges are stroked so the base stays open)
+    ctx.beginPath();
+    ctx.moveTo(122, 116.5);
+    ctx.lineTo(102, 121.5);
+    ctx.lineTo(122, 126.5);
+    ctx.closePath();
+    ctx.fillStyle = "#fff";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(122, 116.5);
+    ctx.lineTo(102, 121.5);
+    ctx.lineTo(122, 126.5);
+    ctx.strokeStyle = "#ff9ec7";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.lineWidth = 1;
+    let fs = 12;
+    ctx.font = "600 " + fs + "px system-ui, sans-serif";
+    while (fs > 10 && ctx.measureText(comment).width > bw - 22) {
+      fs -= 0.5;
+      ctx.font = "600 " + fs + "px system-ui, sans-serif";
+    }
+    ctx.fillStyle = "#33163f";
+    ctx.fillText(comment, bx + 11, by + 17);
     ctx.restore();
     // sparkles only in the empty strip under the card (no text there)
     ctx.fillStyle = "rgba(255,255,255,.55)";
@@ -818,7 +863,7 @@
     g.fillText(rank[0], 540, 768);
     g.fillStyle = "rgba(51,22,63,.7)";
     g.font = "500 38px system-ui, sans-serif";
-    g.fillText(rank[1], 540, 826);
+    g.fillText(commentFor(v), 540, 826);
     // meta chips
     g.font = "700 34px system-ui, sans-serif";
     ["総動員数 " + lastResult.score + "名", "ベスト " + best + "名"].forEach((t, i) => {
@@ -873,6 +918,7 @@
     get score() { return score; },
     get state() { return state; },
     get rankValue() { return Math.max(2, L.maxTile(board)); },
+    get headerComment() { return commentFor(Math.max(2, L.maxTile(board))); },
     get pulseActive() { return !!pulse; },
     get pulseDur() { return pulse ? pulse.dur : 0; },
     get stageTier() { return stageTierOf(Math.max(2, L.maxTile(board))); },
