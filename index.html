@@ -22,6 +22,42 @@
     background:#ffb84d; color:#241a08; font-weight:700; cursor:pointer;
   }
   .overlay button.sub { background:#3a334d; color:#eee; }
+  /* game-over result card: the header panel, centered, screenshot-ready */
+  .result-card {
+    position:relative; width:302px; box-sizing:border-box;
+    background:#fff7fb; color:#33163f; border-radius:20px;
+    padding:20px 20px 18px; display:flex; flex-direction:column;
+    align-items:center; gap:7px; box-shadow:0 18px 50px rgba(0,0,0,.5);
+  }
+  .rc-head { font-size:12px; font-weight:700; letter-spacing:.35em; color:#b0527f; }
+  .rc-newbest {
+    display:none; position:absolute; top:-11px; right:16px;
+    background:#e6007e; color:#fff; font-size:12px; font-weight:700;
+    padding:4px 12px; border-radius:999px; transform:rotate(4deg);
+    box-shadow:0 4px 10px rgba(230,0,126,.45);
+  }
+  .rc-newbest.show { display:block; }
+  .result-card img {
+    width:128px; height:128px; object-fit:cover; border-radius:14px;
+    border:2px solid #ffd3e8; background:#241d33;
+  }
+  .rc-avg { font-size:31px; font-weight:800; color:#e6007e; line-height:1.15; }
+  .rc-rank { font-size:18px; font-weight:700; }
+  .rc-comment { font-size:13px; color:rgba(51,22,63,.7); }
+  .rc-meta { display:flex; gap:8px; margin-top:4px; }
+  .rc-meta span {
+    background:#ffe3f1; color:#33163f; font-size:12px; font-weight:700;
+    padding:5px 12px; border-radius:999px;
+  }
+  .result-card button { width:100%; margin-top:6px; }
+  #shareBtn {
+    background:linear-gradient(90deg, #ff7ab8, #8368ff); color:#fff;
+    box-shadow:0 6px 16px rgba(131,104,255,.4);
+  }
+  .result-card button.sub {
+    background:transparent; color:#8a739e; border:1.5px solid #e3d3f2;
+    font-size:14px; padding:9px 28px;
+  }
 </style>
 </head>
 <body>
@@ -34,9 +70,17 @@
     <button class="sub" id="winRestartBtn">さいしょから</button>
   </div>
   <div class="overlay" id="overOverlay">
-    <h2>ゲームオーバー</h2>
-    <p id="finalScore"></p>
-    <button id="overRestartBtn">もういちど</button>
+    <div class="result-card">
+      <div class="rc-newbest" id="finalNewBest">ベスト更新！</div>
+      <div class="rc-head">GAME OVER</div>
+      <img id="finalPortrait" alt="ランクの立ち絵">
+      <div class="rc-avg" id="finalScore"></div>
+      <div class="rc-rank" id="finalRank"></div>
+      <div class="rc-comment" id="finalComment"></div>
+      <div class="rc-meta"><span id="finalTotal"></span><span id="finalBest"></span></div>
+      <button id="shareBtn">シェアする</button>
+      <button class="sub" id="overRestartBtn">もういちど</button>
+    </div>
   </div>
 </div>
 <script>
@@ -226,6 +270,7 @@
   const SLIDE_MS = 115;   // tile travel time
   const POP_MS = 110;     // merge/spawn pop time after arrival
   const TOTAL_MS = SLIDE_MS + POP_MS;
+  const PULSE_MS = 750;   // header heartbeat when a new max tile is born
 
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
@@ -261,6 +306,9 @@
   let board, score, best, state, wonShown;
   let anim = null;        // { start, events, spawn, preBoard }
   let bufferedDir = null; // latest input received during an animation
+  let pulse = null;       // { start } while the header heartbeat runs
+  let bestAtRunStart = 0; // for the result card's "new best" badge
+  let lastResult = null;  // { v, score } captured at game over, for sharing
   best = parseInt(localStorage.getItem("gameforge_2048_best") || "0", 10);
 
   const cellX = (c) => BOARD_X + GAP + c * (CELL + GAP);
@@ -275,6 +323,8 @@
   function restart() {
     anim = null;
     bufferedDir = null;
+    pulse = null;
+    bestAtRunStart = best;
     board = L.emptyBoard();
     score = 0;
     state = "playing";
@@ -292,6 +342,7 @@
     if (anim && !anim.opening) { bufferedDir = dir; return true; }
     const res = L.moveTracked(board, dir);
     if (!res.moved) return false;
+    const prevMax = L.maxTile(board);
     const preBoard = board;
     board = res.board;
     score += res.gained;
@@ -299,6 +350,10 @@
       best = score;
       localStorage.setItem("gameforge_2048_best", String(best));
     }
+    // first time this run reaches a new max tile: the header panel
+    // throbs (ドクンッ) so the eye is pulled to the new rank
+    const newMax = L.maxTile(board);
+    if (newMax > prevMax && newMax >= 4) pulse = { start: performance.now() };
     const s = L.spawnRandom(board, rng);
     if (!wonShown && L.maxTile(board) >= 2048) {
       wonShown = true;
@@ -306,7 +361,7 @@
       document.getElementById("winOverlay").classList.add("show");
     } else if (!L.canMove(board)) {
       state = "gameover";
-      document.getElementById("finalScore").textContent = "平均動員: " + L.maxTile(board);
+      fillResultCard(newMax);
       document.getElementById("overOverlay").classList.add("show");
     }
     anim = { start: performance.now(), events: res.events, spawn: s, preBoard };
@@ -314,12 +369,31 @@
     return true;
   }
 
+  // the header card moves to the center of the game-over screen as a
+  // screenshot-worthy result card; this fills its DOM twin
+  function fillResultCard(v) {
+    lastResult = { v, score };
+    const rank = RANKS[v] || RANKS[2];
+    document.getElementById("finalScore").textContent = "平均動員" + v + "名";
+    document.getElementById("finalRank").textContent = rank[0];
+    document.getElementById("finalComment").textContent = rank[1];
+    document.getElementById("finalTotal").textContent = "総動員数 " + score + "名";
+    document.getElementById("finalBest").textContent = "ベスト " + best + "名";
+    const nb = document.getElementById("finalNewBest");
+    if (score > bestAtRunStart && score > 0) nb.classList.add("show");
+    else nb.classList.remove("show");
+    const fp = document.getElementById("finalPortrait");
+    const pi = portraits[v] || sprites[v];
+    if (fp && pi && pi.src) fp.src = pi.src;
+  }
+
   function tick(now) {
-    if (!anim) { render(now, null); return; }
     render(now, anim);
-    if (now - anim.start < TOTAL_MS) {
-      requestAnimationFrame(tick);
-    } else {
+    const animating = anim && now - anim.start < TOTAL_MS;
+    const pulsing = pulse && now - pulse.start < PULSE_MS;
+    if (animating || pulsing) { requestAnimationFrame(tick); return; }
+    if (pulse) pulse = null;
+    if (anim) {
       anim = null;
       render(now, null);
       if (bufferedDir) {
@@ -328,6 +402,16 @@
         doMove(d);
       }
     }
+  }
+
+  // heartbeat curve: a strong thump, a smaller echo, then rest
+  function pulseScale(t) {
+    if (!(t > 0)) return 1;
+    if (t < 0.16) return 1 + 0.08 * easeOut(t / 0.16);
+    if (t < 0.34) return 1 + 0.08 * (1 - easeOut((t - 0.16) / 0.18));
+    if (t < 0.5) return 1 + 0.05 * easeOut((t - 0.34) / 0.16);
+    if (t < 0.75) return 1 + 0.05 * (1 - easeOut((t - 0.5) / 0.25));
+    return 1;
   }
 
   function roundRect(x, y, w, h, r) {
@@ -442,7 +526,16 @@
       ctx.fillStyle = "#ff7ab8";
     }
     ctx.fillRect(0, 40, W, 110);
-    // rank card: one calm surface for portrait + all rank text
+    // rank card: one calm surface for portrait + all rank text.
+    // On a rank-up pulse the whole card throbs around its center.
+    const pulseT = pulse ? Math.min(1, Math.max(0, ((now - pulse.start) / PULSE_MS) || 0)) : 0;
+    const pScale = pulse ? pulseScale(pulseT) : 1;
+    ctx.save();
+    if (pScale !== 1) {
+      ctx.translate(195, 94);
+      ctx.scale(pScale, pScale);
+      ctx.translate(-195, -94);
+    }
     ctx.save();
     ctx.shadowColor = "rgba(60,0,40,.25)";
     ctx.shadowBlur = 10;
@@ -451,6 +544,13 @@
     roundRect(14, 50, 362, 88, 14);
     ctx.fill();
     ctx.restore();
+    if (pulse) {
+      ctx.strokeStyle = "rgba(255,197,66," + (0.9 * (1 - pulseT)).toFixed(3) + ")";
+      ctx.lineWidth = 3;
+      roundRect(14, 50, 362, 88, 14);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    }
     const pimg = portraits[rankV];
     const rankImg = (pimg && pimg.complete && pimg.naturalWidth) ? pimg
       : (sprites[rankV] && sprites[rankV].complete && sprites[rankV].naturalWidth) ? sprites[rankV] : null;
@@ -479,6 +579,7 @@
     ctx.textAlign = "right";
     ctx.fillText(nextV ? "次のランク 平均動員" + nextV + "名" : "最高ランク到達！", 364, 124);
     ctx.textAlign = "left";
+    ctx.restore();
     // sparkles only in the empty strip under the card (no text there)
     ctx.fillStyle = "rgba(255,255,255,.55)";
     [30, 120, 260, 350].forEach((sx) => {
@@ -577,12 +678,24 @@
   });
   document.getElementById("winRestartBtn").addEventListener("click", restart);
   document.getElementById("overRestartBtn").addEventListener("click", restart);
+  document.getElementById("shareBtn").addEventListener("click", async () => {
+    if (!lastResult) return;
+    const rank = RANKS[lastResult.v] || RANKS[2];
+    const text = "『箱アイドル2048』で平均動員" + lastResult.v + "名「" + rank[0] + "」到達！総動員数" + lastResult.score + "名";
+    const url = "https://roppon6csm-maker.github.io/testgame/";
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try { await navigator.share({ title: "箱アイドル2048", text, url }); } catch (e) { /* user cancelled */ }
+    } else if (typeof window.open === "function") {
+      window.open("https://twitter.com/intent/tweet?text=" + encodeURIComponent(text + " #箱アイドル2048") + "&url=" + encodeURIComponent(url), "_blank");
+    }
+  });
 
   window.__GAME__ = {
     get board() { return board; },
     get score() { return score; },
     get state() { return state; },
     get rankValue() { return Math.max(2, L.maxTile(board)); },
+    get pulseActive() { return !!pulse; },
     get stageTier() { return stageTierOf(Math.max(2, L.maxTile(board))); },
     get highlightValue() { const m = L.maxTile(board); return m >= 4 ? m : 0; },
     highlightCells() {
@@ -598,6 +711,7 @@
     setBoard(b, s) {
       anim = null;
       bufferedDir = null;
+      pulse = null;
       board = b.map((row) => row.slice());
       if (typeof s === "number") score = s;
       state = "playing";
